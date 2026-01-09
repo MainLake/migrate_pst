@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PostgreSQL Backup & Restore Tool</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">🗄️</span>
+          <span>PG Migrate</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <span class="nav-item-icon">📊</span>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-page="connections">
+          <span class="nav-item-icon">🔌</span>
+          <span>Conexiones</span>
+        </a>
+        <a href="#" class="nav-item" data-page="backup">
+          <span class="nav-item-icon">💾</span>
+          <span>Crear Backup</span>
+        </a>
+        <a href="#" class="nav-item" data-page="restore">
+          <span class="nav-item-icon">♻️</span>
+          <span>Restaurar</span>
+        </a>
+        <a href="#" class="nav-item" data-page="history">
+          <span class="nav-item-icon">📜</span>
+          <span>Historial</span>
+        </a>
+        <a href="#" class="nav-item" data-page="docker">
+          <span class="nav-item-icon">🐳</span>
+          <span>Docker</span>
+        </a>
+        <a href="#" class="nav-item" data-page="tutorial">
+          <span class="nav-item-icon">📚</span>
+          <span>Tutorial</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Dashboard Page -->
+      <section id="dashboard" class="page active">
+        <div class="page-header">
+          <h1 class="page-title">Dashboard</h1>
+          <p class="page-description">Gestiona tus backups de PostgreSQL con facilidad</p>
+        </div>
+
+        <div id="dashboard-stats" class="grid grid-3 mb-3">
+          <!-- Stats will be dynamically loaded -->
+        </div>
+
+        <!-- Demo Databases Info -->
+        <div class="card mb-3"
+          style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1)); border: 1px solid rgba(99, 102, 241, 0.3);">
+          <div class="card-header">
+            <h2 class="card-title">🎮 Bases de Datos de Prueba</h2>
+          </div>
+          <div class="card-body">
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+              El docker-compose incluye dos contenedores PostgreSQL listos para probar la herramienta:
+            </p>
+
+            <div class="grid grid-2" style="gap: 1rem;">
+              <!-- Source Database -->
+              <div
+                style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border-left: 3px solid var(--accent-primary);">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                  <span style="font-size: 1.5rem;">📤</span>
+                  <strong style="color: var(--accent-primary);">Source Database</strong>
+                </div>
+                <div style="font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.6;">
+                  <div><span style="color: var(--text-tertiary);">Host:</span> <code>localhost</code></div>
+                  <div><span style="color: var(--text-tertiary);">Puerto:</span> <code>5432</code></div>
+                  <div><span style="color: var(--text-tertiary);">Database:</span> <code>source_db</code></div>
+                  <div><span style="color: var(--text-tertiary);">Usuario:</span> <code>postgres</code></div>
+                  <div><span style="color: var(--text-tertiary);">Contraseña:</span> <code>postgres</code></div>
+                </div>
+                <div
+                  style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--glass-border); color: var(--text-tertiary); font-size: 0.8rem;">
+                  💡 Usa esta para hacer backups
+                </div>
+              </div>
+
+              <!-- Target Database -->
+              <div
+                style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border-left: 3px solid var(--success);">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                  <span style="font-size: 1.5rem;">📥</span>
+                  <strong style="color: var(--success);">Target Database</strong>
+                </div>
+                <div style="font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.6;">
+                  <div><span style="color: var(--text-tertiary);">Host:</span> <code>localhost</code></div>
+                  <div><span style="color: var(--text-tertiary);">Puerto:</span> <code>5433</code></div>
+                  <div><span style="color: var(--text-tertiary);">Database:</span> <code>target_db</code></div>
+                  <div><span style="color: var(--text-tertiary);">Usuario:</span> <code>postgres</code></div>
+                  <div><span style="color: var(--text-tertiary);">Contraseña:</span> <code>postgres</code></div>
+                </div>
+                <div
+                  style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--glass-border); color: var(--text-tertiary); font-size: 0.8rem;">
+                  💡 Usa esta para restaurar backups
+                </div>
+              </div>
+            </div>
+
+            <div
+              style="margin-top: 1rem; padding: 0.75rem; background: rgba(99, 102, 241, 0.1); border-radius: var(--radius-sm); font-size: 0.875rem; color: var(--text-secondary);">
+              <strong>📌 Nota:</strong> Estas bases de datos son opcionales. Puedes trabajar con tus propias bases de
+              datos remotas creando conexiones desde la pestaña "Conexiones".
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Backups Recientes</h2>
+            <button class="btn btn-primary btn-sm" onclick="app.navigateTo('backup')">
+              ➕ Nuevo Backup
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="recent-backups">
+              <p class="text-center" style="padding: 2rem; color: var(--text-tertiary);">
+                Cargando...
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Connections Page -->
+      <section id="connections" class="page">
+        <div class="page-header">
+          <h1 class="page-title">Conexiones</h1>
+          <p class="page-description">Administra tus conexiones a bases de datos PostgreSQL</p>
+        </div>
+
+        <div class="flex-between mb-2">
+          <div></div>
+          <button class="btn btn-primary" onclick="app.showAddConnectionModal()">
+            ➕ Nueva Conexión
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Host</th>
+                  <th>Base de Datos</th>
+                  <th>Tipo</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="connections-list">
+                <tr>
+                  <td colspan="6" class="text-center" style="padding: 2rem;">Cargando...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Backup Page -->
+      <section id="backup" class="page">
+        <div class="page-header">
+          <h1 class="page-title">Crear Backup</h1>
+          <p class="page-description">Configura y ejecuta un backup de tu base de datos</p>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card">
+            <h2 class="card-title mb-2">Configuración</h2>
+
+            <form id="backup-form">
+              <div class="form-group">
+                <label class="form-label">Conexión de Origen</label>
+                <select class="form-select" id="backup-connection" required>
+                  <option value="">Seleccionar conexión...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Esquema</label>
+                <select class="form-select" id="backup-schema" required>
+                  <option value="">Primero selecciona una conexión</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Tablas a Excluir</label>
+                <input type="text" class="form-input" id="table-search" placeholder="🔍 Buscar tablas..."
+                  style="margin-bottom: 0.5rem;">
+
+                <div style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
+                  <label class="form-checkbox">
+                    <input type="radio" name="exclude-mode" value="complete" checked>
+                    <span>Excluir tabla completa</span>
+                  </label>
+                  <label class="form-checkbox">
+                    <input type="radio" name="exclude-mode" value="data-only">
+                    <span>Solo excluir datos (mantener estructura)</span>
+                  </label>
+                </div>
+
+                <div id="backup-tables-list"
+                  style="max-height: 250px; overflow-y: auto; background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md);">
+                  <p class="text-center" style="color: var(--text-tertiary);">Primero selecciona un esquema</p>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Formato</label>
+                <select class="form-select" id="backup-format">
+                  <option value="custom">Custom (.dump)</option>
+                  <option value="plain">Plain SQL (.sql)</option>
+                </select>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="width: 100%;">
+                💾 Ejecutar Backup
+              </button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title mb-2">Estado del Backup</h2>
+            <div id="backup-status">
+              <p class="text-center" style="padding: 2rem; color: var(--text-tertiary);">
+                Esperando configuración...
+              </p>
+            </div>
+
+            <!-- Technical Details Panel -->
+            <div id="technical-details-section" style="margin-top: 1.5rem; display: none;">
+              <button class="btn btn-ghost" id="toggle-technical-details" type="button"
+                style="width: 100%; justify-content: space-between; padding: 0.75rem 1rem;">
+                <span>🔧 Detalles Técnicos</span>
+                <span id="details-icon">▼</span>
+              </button>
+
+              <div id="technical-details-content"
+                style="display: none; margin-top: 1rem; background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); font-family: 'Courier New', monospace; font-size: 0.875rem;">
+                <div style="margin-bottom: 1rem;">
+                  <strong style="color: var(--accent-primary);">Comando pg_dump:</strong>
+                  <pre id="backup-command"
+                    style="background: var(--bg-primary); padding: 0.75rem; border-radius: var(--radius-sm); overflow-x: auto; margin-top: 0.5rem; color: var(--text-secondary); white-space: pre-wrap; word-wrap: break-word;"></pre>
+                </div>
+
+                <div>
+                  <strong style="color: var(--accent-primary);">Output en Tiempo Real:</strong>
+                  <div id="backup-output"
+                    style="background: var(--bg-primary); padding: 0.75rem; border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto; margin-top: 0.5rem; color: var(--text-tertiary); font-size: 0.8rem; line-height: 1.4;">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Restore Page -->
+      <section id="restore" class="page">
+        <div class="page-header">
+          <h1 class="page-title">Restaurar Backup</h1>
+          <p class="page-description">Selecciona un backup y restaura en una base de datos local o contenedor Docker</p>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card">
+            <h2 class="card-title mb-2">Seleccionar Backup</h2>
+
+            <div class="form-group">
+              <label class="form-label">Backup Disponibles</label>
+              <select class="form-select" id="restore-backup" required>
+                <option value="">Cargando backups...</option>
+              </select>
+            </div>
+
+            <div id="restore-backup-info" class="hidden">
+              <!-- Backup info will be shown here -->
+            </div>
+
+            <h2 class="card-title mt-3 mb-2">Destino</h2>
+
+            <div class="form-group">
+              <label class="form-label">Conexión de Destino</label>
+              <select class="form-select" id="restore-connection" required>
+                <option value="">Seleccionar conexión...</option>
+              </select>
+            </div>
+
+            <button id="restore-btn" class="btn btn-primary" style="width: 100%;" disabled>
+              ♻️ Restaurar Backup
+            </button>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title mb-2">Estado de Restauración</h2>
+            <div id="restore-status">
+              <p class="text-center" style="padding: 2rem; color: var(--text-tertiary);">
+                Esperando selección...
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- History Page -->
+      <section id="history" class="page">
+        <div class="page-header">
+          <h1 class="page-title">Historial</h1>
+          <p class="page-description">Revisa el historial de backups y restauraciones</p>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-header">
+            <h2 class="card-title">Backups</h2>
+            <button class="btn btn-primary btn-sm" onclick="app.showImportBackupModal()">
+              📤 Importar Backup
+            </button>
+          </div>
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Conexión</th>
+                  <th>Esquema</th>
+                  <th>Tamaño</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="backup-history-list">
+                <tr>
+                  <td colspan="6" class="text-center" style="padding: 2rem;">Cargando...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Restauraciones</h2>
+          </div>
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Esquema</th>
+                  <th>Conexión Destino</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="restore-history-list">
+                <tr>
+                  <td colspan="4" class="text-center" style="padding: 2rem;">Cargando...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tutorial Page -->
+      <section id="tutorial" class="page">
+        <div class="page-header">
+          <h1 class="page-title">📚 Tutorial de Uso</h1>
+          <p class="page-description">Guía paso a paso para hacer backups y restauraciones</p>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header">
+            <h2 class="card-title">🎯 Flujo Completo</h2>
+          </div>
+          <div class="card-body">
+            <div
+              style="background: var(--bg-tertiary); padding: 1.5rem; border-radius: var(--radius-md); text-align: center;">
+              <div
+                style="display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap; font-size: 0.9rem;">
+                <div
+                  style="padding: 1rem; background: var(--bg-elevated); border-radius: var(--radius-sm); min-width: 150px;">
+                  <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔌</div>
+                  <strong>1. Conexión</strong>
+                  <div style="color: var(--text-tertiary); font-size: 0.85rem; margin-top: 0.25rem;">Agrega tu BD</div>
+                </div>
+                <div style="font-size: 1.5rem; color: var(--text-tertiary);">→</div>
+                <div
+                  style="padding: 1rem; background: var(--bg-elevated); border-radius: var(--radius-sm); min-width: 150px;">
+                  <div style="font-size: 2rem; margin-bottom: 0.5rem;">💾</div>
+                  <strong>2. Backup</strong>
+                  <div style="color: var(--text-tertiary); font-size: 0.85rem; margin-top: 0.25rem;">Crea copia</div>
+                </div>
+                <div style="font-size: 1.5rem; color: var(--text-tertiary);">→</div>
+                <div
+                  style="padding: 1rem; background: var(--bg-elevated); border-radius: var(--radius-sm); min-width: 150px;">
+                  <div style="font-size: 2rem; margin-bottom: 0.5rem;">♻️</div>
+                  <strong>3. Restaurar</strong>
+                  <div style="color: var(--text-tertiary); font-size: 0.85rem; margin-top: 0.25rem;">Carga datos</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="card mb-3">
+          <div class="card-header"
+            style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1)); border-left: 4px solid var(--accent-primary);">
+            <h2 class="card-title">Paso 1: Crear una Conexión 🔌</h2>
+          </div>
+          <div class="card-body">
+            <ol style="line-height: 2; color: var(--text-secondary);">
+              <li>Ve a la pestaña <strong style="color: var(--accent-primary);">"Conexiones"</strong> en el menú lateral
+              </li>
+              <li>Clic en el botón <code>➕ Nueva Conexión</code></li>
+              <li>Llena el formulario:
+                <ul style="margin-top: 0.5rem;">
+                  <li><strong>Nombre:</strong> Un nombre descriptivo (ej: "Mi Base Producción")</li>
+                  <li><strong>Host:</strong> Dirección del servidor (ej: <code>localhost</code> o
+                    <code>192.168.1.10</code>)
+                  </li>
+                  <li><strong>Puerto:</strong> Usualmente <code>5432</code></li>
+                  <li><strong>Database:</strong> Nombre de la base de datos</li>
+                  <li><strong>Usuario:</strong> Usuario de PostgreSQL</li>
+                  <li><strong>Contraseña:</strong> Contraseña del usuario</li>
+                </ul>
+              </li>
+              <li>Opcionalmente puedes <code>🔌 Probar Conexión</code> antes de guardar</li>
+              <li>Clic en <code>✓ Guardar Conexión</code></li>
+            </ol>
+
+            <div
+              style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-left: 3px solid var(--accent-primary); border-radius: var(--radius-sm);">
+              <strong>💡 Tip:</strong> Puedes crear múltiples conexiones para diferentes bases de datos
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="card mb-3">
+          <div class="card-header"
+            style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.1)); border-left: 4px solid var(--success);">
+            <h2 class="card-title">Paso 2: Crear un Backup 💾</h2>
+          </div>
+          <div class="card-body">
+            <ol style="line-height: 2; color: var(--text-secondary);">
+              <li>Ve a <strong style="color: var(--success);">"Crear Backup"</strong></li>
+              <li>Selecciona la <strong>Conexión de Origen</strong> (de dónde sacar los datos)</li>
+              <li>Selecciona el <strong>Esquema</strong> que quieres respaldar</li>
+              <li><strong>Opcional:</strong> Excluir tablas
+                <ul style="margin-top: 0.5rem;">
+                  <li>Usa el buscador 🔍 para filtrar tablas</li>
+                  <li>Selecciona modo:
+                    <ul>
+                      <li><strong>Excluir tabla completa:</strong> No incluye estructura ni datos</li>
+                      <li><strong>Solo excluir datos:</strong> Incluye estructura vacía (útil para tablas grandes)</li>
+                    </ul>
+                  </li>
+                  <li>Marca las tablas a excluir</li>
+                </ul>
+              </li>
+              <li>Selecciona el formato:
+                <ul style="margin-top: 0.5rem;">
+                  <li><code>Custom (.dump)</code> - Recomendado, comprimido y rápido</li>
+                  <li><code>Plain SQL (.sql)</code> - Texto plano, editable</li>
+                </ul>
+              </li>
+              <li>Clic en <code>💾 Ejecutar Backup</code></li>
+              <li>Espera a que termine (verás el progreso en tiempo real)</li>
+              <li><strong>Opcional:</strong> Clic en <code>🔧 Detalles Técnicos</code> para ver el comando y output</li>
+            </ol>
+
+            <div
+              style="margin-top: 1rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-left: 3px solid var(--success); border-radius: var(--radius-sm);">
+              <strong>💡 Tip:</strong> Los backups se guardan en <code>./backups/</code> y persisten fuera de Docker
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="card mb-3">
+          <div class="card-header"
+            style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(147, 51, 234, 0.1)); border-left: 4px solid var(--accent);">
+            <h2 class="card-title">Paso 3: Restaurar un Backup ♻️</h2>
+          </div>
+          <div class="card-body">
+            <ol style="line-height: 2; color: var(--text-secondary);">
+              <li>Ve a <strong style="color: var(--accent);">"Restaurar"</strong></li>
+              <li>Selecciona el <strong>Backup</strong> que quieres restaurar</li>
+              <li>Verás la información del backup (esquema, fecha, tamaño)</li>
+              <li>Selecciona la <strong>Conexión de Destino</strong> (dónde cargar los datos)</li>
+              <li>Clic en <code>♻️ Restaurar Backup</code></li>
+              <li>Confirma la acción (⚠️ puede sobrescribir datos)</li>
+              <li>Espera a que termine</li>
+            </ol>
+
+            <div
+              style="margin-top: 1rem; padding: 1rem; background: rgba(239, 68, 68, 0.1); border-left: 3px solid var(--error); border-radius: var(--radius-sm);">
+              <strong>⚠️ Importante:</strong> Restaurar sobrescribirá datos en la BD destino. Asegúrate de seleccionar
+              la correcta.
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Tips -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">💡 Consejos Útiles</h2>
+          </div>
+          <div class="card-body">
+            <div class="grid grid-2" style="gap: 1rem;">
+              <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🐳</div>
+                <strong>Bases de Datos de Prueba</strong>
+                <p style="color: var(--text-tertiary); font-size: 0.9rem; margin-top: 0.5rem;">
+                  En el Dashboard encontrarás las credenciales de dos contenedores PostgreSQL listos para practicar sin
+                  riesgo.
+                </p>
+              </div>
+
+              <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📜</div>
+                <strong>Ver Historial</strong>
+                <p style="color: var(--text-tertiary); font-size: 0.9rem; margin-top: 0.5rem;">
+                  En "Historial" puedes ver todos tus backups y restauraciones anteriores, con sus estados y fechas.
+                </p>
+              </div>
+
+              <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔧</div>
+                <strong>Detalles Técnicos</strong>
+                <p style="color: var(--text-tertiary); font-size: 0.9rem; margin-top: 0.5rem;">
+                  Durante un backup, expande "Detalles Técnicos" para ver el comando pg_dump exacto y su output en
+                  tiempo real.
+                </p>
+              </div>
+
+              <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📁</div>
+                <strong>Ubicación de Backups</strong>
+                <p style="color: var(--text-tertiary); font-size: 0.9rem; margin-top: 0.5rem;">
+                  Los archivos se guardan en <code>./backups/</code> en el directorio del proyecto, accesibles desde tu
+                  sistema.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Docker Page -->
+      <section id="docker" class="page">
+        <div class="page-header">
+          <h1 class="page-title">Contenedores Docker</h1>
+          <p class="page-description">Gestiona contenedores PostgreSQL en Docker</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Contenedores PostgreSQL</h2>
+            <button class="btn btn-secondary btn-sm" onclick="app.loadDockerContainers()">
+              🔄 Actualizar
+            </button>
+          </div>
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Imagen</th>
+                  <th>Estado</th>
+                  <th>Puertos</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="docker-containers-list">
+                <tr>
+                  <td colspan="5" class="text-center" style="padding: 2rem;">Cargando...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add Connection Modal -->
+  <div id="add-connection-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Nueva Conexión</h2>
+        <button class="modal-close" onclick="app.closeAddConnectionModal()">×</button>
+      </div>
+      <form id="add-connection-form">
+        <div class="form-group">
+          <label class="form-label">Nombre</label>
+          <input type="text" class="form-input" id="conn-name" required>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Host</label>
+            <input type="text" class="form-input" id="conn-host" value="localhost" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Puerto</label>
+            <input type="number" class="form-input" id="conn-port" value="5432" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Base de Datos</label>
+          <input type="text" class="form-input" id="conn-database" required>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Usuario</label>
+            <input type="text" class="form-input" id="conn-username" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contraseña</label>
+            <input type="password" class="form-input" id="conn-password">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-checkbox">
+            <input type="checkbox" id="conn-is-docker">
+            <span>Es un contenedor Docker</span>
+          </label>
+        </div>
+
+        <div class="form-group hidden" id="docker-container-group">
+          <label class="form-label">Container ID</label>
+          <select class="form-select" id="conn-docker-container">
+            <option value="">Seleccionar contenedor...</option>
+          </select>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-secondary" onclick="app.testConnection()">
+            🔌 Probar Conexión
+          </button>
+          <button type="submit" class="btn btn-primary" style="flex: 1;">
+            ✓ Guardar Conexión
+          </button>
+        </div>
+
+        <div id="connection-test-result" class="mt-2"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+
+</html>
