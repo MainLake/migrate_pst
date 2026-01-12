@@ -722,11 +722,16 @@ class App {
             // Backup history
             const backupTbody = document.getElementById('backup-history-list');
             if (backups.length === 0) {
-                backupTbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem;">No hay backups</td></tr>';
+                backupTbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 2rem;">No hay backups</td></tr>';
             } else {
-                backupTbody.innerHTML = backups.map(b => `
+                backupTbody.innerHTML = backups.map(b => {
+                    // Extract filename from path (handles both / and \)
+                    const filename = b.file_path ? b.file_path.split(/[/\\]/).pop() : 'N/A';
+                    
+                    return `
           <tr>
             <td>${this.formatDate(b.created_at)}</td>
+            <td title="${b.file_path}" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${filename}</td>
             <td>${b.connection_name || 'N/A'}</td>
             <td>${b.schema_name}</td>
             <td>${this.formatBytes(b.file_size)}</td>
@@ -736,7 +741,7 @@ class App {
               <button class="btn btn-danger btn-sm" onclick="app.deleteBackup(${b.id})">🗑️</button>
             </td>
           </tr>
-        `).join('');
+        `}).join('');
             }
 
             // Restore history
@@ -767,6 +772,85 @@ class App {
             await this.loadDashboard();
         } catch (error) {
             alert('Error: ' + error.message);
+        }
+    }
+
+    // Import Backup
+    showImportBackupModal() {
+        document.getElementById('import-backup-modal').classList.add('active');
+        
+        // Populate connection select
+        const select = document.getElementById('import-connection-id');
+        select.innerHTML = '<option value="">Ninguna (Backup externo)</option>' +
+            this.connections.map(conn => 
+                `<option value="${conn.id}">${conn.name} (${conn.database})</option>`
+            ).join('');
+    }
+
+    closeImportBackupModal() {
+        document.getElementById('import-backup-modal').classList.remove('active');
+        document.getElementById('import-backup-form').reset();
+        document.getElementById('import-progress').style.display = 'none';
+        document.getElementById('import-progress-bar').style.width = '0%';
+    }
+
+    async uploadBackup() {
+        const fileInput = document.getElementById('import-file');
+        const schemaInput = document.getElementById('import-schema-name');
+        const connInput = document.getElementById('import-connection-id');
+        
+        if (fileInput.files.length === 0) return;
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('backup', file);
+        formData.append('schemaName', schemaInput.value || 'imported');
+        if (connInput.value) {
+            formData.append('connectionId', connInput.value);
+        }
+
+        // Show progress
+        const progressBar = document.getElementById('import-progress-bar');
+        document.getElementById('import-progress').style.display = 'block';
+        progressBar.style.width = '10%';
+
+        try {
+            // Note: fetch doesn't support upload progress easily without XMLHttpRequest, 
+            // but we'll simulate or just await.
+            progressBar.style.width = '50%';
+            
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+                'Authorization': token ? `Bearer ${token}` : ''
+            };
+
+            const response = await fetch('/api/backups/upload', {
+                method: 'POST',
+                headers: headers,
+                body: formData
+            });
+
+            progressBar.style.width = '100%';
+
+            if (response.status === 401) {
+                this.showLogin();
+                throw new Error('Unauthorized');
+            }
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Upload failed');
+            }
+
+            alert('✅ Backup importado exitosamente');
+            this.closeImportBackupModal();
+            this.loadHistory();
+            this.loadDashboard(); // Update stats
+
+        } catch (error) {
+            alert('❌ Error al subir backup: ' + error.message);
+            document.getElementById('import-progress').style.display = 'none';
         }
     }
 
@@ -914,6 +998,15 @@ class App {
         document.getElementById('restore-btn').addEventListener('click', async () => {
             await this.restoreBackup();
         });
+
+        // Import Backup Form
+        const importForm = document.getElementById('import-backup-form');
+        if (importForm) {
+            importForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.uploadBackup();
+            });
+        }
     }
 
     async addConnection() {
