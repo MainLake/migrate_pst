@@ -34,9 +34,17 @@ else
     COMPOSE_CMD="docker-compose"
 fi
 
-# Stop existing containers if any
-echo "🛑 Stopping existing containers..."
-$COMPOSE_CMD down 2>/dev/null || true
+# Function to stop containers
+cleanup() {
+    echo ""
+    echo "🛑 Stopping containers..."
+    $COMPOSE_CMD down
+    echo "✅ Containers stopped. Goodbye!"
+    exit 0
+}
+
+# Trap SIGINT (Ctrl+C) and SIGTERM
+trap cleanup SIGINT SIGTERM
 
 # Build and start
 echo "🔨 Building application..."
@@ -47,13 +55,15 @@ $COMPOSE_CMD up -d
 
 echo ""
 echo "⏳ Waiting for services to be healthy..."
-sleep 5
 
 # Wait for health check
 MAX_RETRIES=30
 RETRY_COUNT=0
+HEALTHY=false
+
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if curl -s http://localhost:3000/api/health > /dev/null 2>&1; then
+        HEALTHY=true
         echo "✅ Application is ready!"
         break
     fi
@@ -62,10 +72,11 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
 done
 
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "❌ Application failed to start properly"
-    echo "Check logs with: $COMPOSE_CMD logs -f migrate-pst"
-    exit 1
+if [ "$HEALTHY" = false ]; then
+    echo "❌ Application failed to start properly."
+    echo "Showing logs..."
+    $COMPOSE_CMD logs --tail=50 migrate-pst
+    cleanup
 fi
 
 echo ""
@@ -76,22 +87,21 @@ echo "📱 Web Interface: http://localhost:3000"
 echo "📊 Example Source DB: localhost:5432 (postgres/postgres)"
 echo "🎯 Example Target DB: localhost:5433 (postgres/postgres)"
 echo ""
-echo "📋 Useful commands:"
-echo "   View logs:    $COMPOSE_CMD logs -f migrate-pst"
-echo "   Stop:         $COMPOSE_CMD down"
-echo "   Restart:      $COMPOSE_CMD restart"
-echo "   Rebuild:      $COMPOSE_CMD up -d --build"
+echo "⚠️  Press Ctrl+C to stop the server and containers"
+echo "=================================================="
 echo ""
-echo "🌐 Opening browser..."
-sleep 2
 
-# Try to open browser
+# Open browser
 if command -v open &> /dev/null; then
     open http://localhost:3000
 elif command -v xdg-open &> /dev/null; then
     xdg-open http://localhost:3000
 elif command -v start &> /dev/null; then
     start http://localhost:3000
-else
-    echo "Please open http://localhost:3000 in your browser"
 fi
+
+# Stream logs in foreground - this keeps the script running until Ctrl+C
+# We use wait to allow the trap to work correctly with child processes
+$COMPOSE_CMD logs -f &
+wait $!
+

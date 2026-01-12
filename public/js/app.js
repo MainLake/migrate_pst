@@ -15,6 +15,9 @@ class App {
     }
 
     async init() {
+        const isAuth = await this.checkAuth();
+        if (!isAuth) return; // Wait for login
+
         this.setupNavigation();
         this.setupWebSocket();
         this.setupForms();
@@ -166,10 +169,23 @@ class App {
 
             case 'restore_started':
                 this.updateRestoreStatus('Iniciando restauración...', 'info');
+                const restOut = document.getElementById('restore-output');
+                if (restOut) restOut.innerHTML = '';
                 break;
 
             case 'restore_progress':
                 this.updateRestoreStatus(data.message, 'info');
+                // Append log
+                const restoreOutput = document.getElementById('restore-output');
+                const restoreContainer = document.getElementById('restore-output-container');
+                if (restoreOutput && restoreContainer) {
+                    restoreContainer.style.display = 'block';
+                    const line = document.createElement('div');
+                    line.textContent = data.message;
+                    line.style.marginBottom = '0.25rem';
+                    restoreOutput.appendChild(line);
+                    restoreOutput.scrollTop = restoreOutput.scrollHeight;
+                }
                 break;
 
             case 'restore_completed':
@@ -179,6 +195,83 @@ class App {
             case 'restore_failed':
                 this.updateRestoreStatus(`❌ Error: ${data.error}`, 'error');
                 break;
+
+            case 'sync_state':
+                this.handleSyncState(data.state);
+                break;
+        }
+    }
+
+    handleSyncState(state) {
+        if (!state) return;
+
+        // Determine which page should be active or updated
+        const isBackup = state.type === 'backup';
+
+        // Populate logs
+        const outputDiv = isBackup ? document.getElementById('backup-output') : document.getElementById('restore-status');
+
+        if (state.logs && state.logs.length > 0) {
+            if (isBackup) {
+                if (outputDiv) {
+                    outputDiv.innerHTML = ''; // Clear existing
+                    state.logs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.textContent = log;
+                        line.style.marginBottom = '0.25rem';
+                        outputDiv.appendChild(line);
+                    });
+                    outputDiv.scrollTop = outputDiv.scrollHeight;
+                }
+
+                // Also update command if available
+                const cmdDiv = document.getElementById('backup-command');
+                if (cmdDiv && state.command) {
+                    cmdDiv.textContent = state.command;
+                }
+
+                // Show technical details if running
+                const technicalSection = document.getElementById('technical-details-section');
+                if (technicalSection) technicalSection.style.display = 'block';
+            } else {
+                // Restoration logs sync
+                const restoreOutput = document.getElementById('restore-output');
+                const restoreContainer = document.getElementById('restore-output-container');
+                if (restoreOutput && restoreContainer) {
+                    restoreContainer.style.display = 'block';
+                    restoreOutput.innerHTML = '';
+                    state.logs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.textContent = log;
+                        line.style.marginBottom = '0.25rem';
+                        restoreOutput.appendChild(line);
+                    });
+                    restoreOutput.scrollTop = restoreOutput.scrollHeight;
+                }
+            }
+        }
+
+        if (state.isRunning) {
+            const statusMsg = isBackup ? '⚠️ Backup en progreso (reanudado)...' : '⚠️ Restauración en progreso (reanudada)...';
+            if (isBackup) {
+                this.updateBackupStatus(statusMsg, 'info');
+                // Optionally disable form buttons
+                const btn = document.querySelector('#backup-form button[type="submit"]');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = '⏳ Ejecutando...';
+                }
+            } else {
+                this.updateRestoreStatus(statusMsg, 'info');
+                const btn = document.getElementById('restore-btn');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = '⏳ Ejecutando...';
+                }
+            }
+        } else if (state.logs.length > 0) {
+            // Job finished but we have state (likely just refreshed after completion)
+            // We can show "Last Job Status"
         }
     }
 
@@ -196,13 +289,23 @@ class App {
 
     // API Calls
     async api(endpoint, options = {}) {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : '',
+            ...(options.headers || {})
+        };
+
         try {
             const response = await fetch(`/api${endpoint}`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                ...options
+                ...options,
+                headers
             });
+
+            if (response.status === 401) {
+                this.showLogin();
+                throw new Error('Unauthorized');
+            }
 
             if (!response.ok) {
                 const error = await response.json();
@@ -486,25 +589,77 @@ class App {
         container.innerHTML = tables.map(table => {
             const isChecked = excludeSet.has(table.table_name);
             return `
-        <label class="form-checkbox table-item" style="margin-bottom: 0.5rem;">
-          <input type="checkbox" class="table-checkbox" value="${table.table_name}" ${isChecked ? 'checked' : ''}>
-          <span>${table.table_name} <span style="color: var(--text-tertiary); font-size: 0.875rem;">(${table.column_count} columnas)</span></span>
-        </label>
+        <div class="table-item" style="margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
+            <label class="form-checkbox" style="flex: 1;">
+                <input type="checkbox" class="table-checkbox" value="${table.table_name}" ${isChecked ? 'checked' : ''}>
+                <span>${table.table_name} <span style="color: var(--text-tertiary); font-size: 0.875rem;">(${table.column_count} cols)</span></span>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding: 0.1rem 0.5rem;" onclick="app.previewTable('${table.table_name}')" title="Ver Datos">
+                👁️
+            </button>
+        </div>
       `;
         }).join('');
 
-        // Add event listeners to checkboxes
         document.querySelectorAll('.table-checkbox').forEach(cb => {
-            cb.onchange = (e) => {
-                const tableName = e.target.value;
+            cb.addEventListener('change', (e) => {
+                const mode = document.querySelector('input[name="exclude-mode"]:checked').value;
+                const excludeSet = mode === 'complete' ? this.excludedTables : this.excludedDataTables;
+
                 if (e.target.checked) {
-                    excludeSet.add(tableName);
+                    excludeSet.add(e.target.value);
                 } else {
-                    excludeSet.delete(tableName);
+                    excludeSet.delete(e.target.value);
                 }
-            };
+            });
         });
     }
+
+    async previewTable(tableName) {
+        const connectionId = document.getElementById('backup-connection').value;
+        const schema = document.getElementById('backup-schema').value;
+
+        if (!connectionId || !schema) return;
+
+        const modal = document.getElementById('preview-modal');
+        const title = document.getElementById('preview-table-name');
+        const head = document.getElementById('preview-head');
+        const body = document.getElementById('preview-body');
+
+        title.textContent = tableName;
+        head.innerHTML = '';
+        body.innerHTML = '<tr><td style="padding: 2rem; text-align: center;">Cargando datos...</td></tr>';
+        modal.style.display = 'flex';
+
+        try {
+            const data = await this.api(`/connections/${connectionId}/schemas/${schema}/tables/${tableName}/preview`);
+
+            if (data.length === 0) {
+                body.innerHTML = '<tr><td style="padding: 2rem; text-align: center;">La tabla está vacía.</td></tr>';
+                return;
+            }
+
+            // Render Headers
+            const headers = Object.keys(data[0]);
+            head.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+
+            // Render Rows
+            body.innerHTML = data.map(row => `
+                <tr>${headers.map(h => `<td>${this.formatCellValue(row[h])}</td>`).join('')}</tr>
+            `).join('');
+
+        } catch (error) {
+            body.innerHTML = `<tr><td style="padding: 2rem; text-align: center; color: var(--error);">Error: ${error.message}</td></tr>`;
+        }
+    }
+
+    formatCellValue(value) {
+        if (value === null) return '<em style="color: var(--text-tertiary);">NULL</em>';
+        if (typeof value === 'object') return JSON.stringify(value);
+        if (String(value).length > 50) return String(value).substring(0, 50) + '...';
+        return String(value);
+    }
+
 
     // Restore Page
     async loadRestorePage() {
@@ -577,6 +732,7 @@ class App {
             <td>${this.formatBytes(b.file_size)}</td>
             <td><span class="badge badge-${b.status === 'completed' ? 'success' : 'error'}">${b.status}</span></td>
             <td>
+              <button class="btn btn-secondary btn-sm" onclick="window.location.href='/api/backups/${b.id}/download'" ${b.status !== 'completed' ? 'disabled' : ''}>⬇️</button>
               <button class="btn btn-danger btn-sm" onclick="app.deleteBackup(${b.id})">🗑️</button>
             </td>
           </tr>
@@ -621,27 +777,75 @@ class App {
             const tbody = document.getElementById('docker-containers-list');
 
             if (this.dockerContainers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 2rem;">No hay contenedores PostgreSQL</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem;">No hay contenedores PostgreSQL</td></tr>';
                 return;
             }
 
             tbody.innerHTML = this.dockerContainers.map(c => `
-        <tr>
-          <td style="font-weight: 600; color: var(--text-primary);">${c.name}</td>
-          <td>${c.image}</td>
-          <td><span class="badge badge-${c.state === 'running' ? 'success' : 'error'}">${c.state}</span></td>
-          <td>${c.ports.map(p => p.PublicPort ? `${p.PublicPort}→${p.PrivatePort}` : p.PrivatePort).join(', ')}</td>
+        <tr id="docker-row-${c.id}">
+          <td style="font-weight: 600; color: var(--text-primary);">
+            ${c.name}
+            <div style="font-size: 0.75rem; color: var(--text-tertiary);">${c.id.substring(0, 12)}</div>
+          </td>
           <td>
-            <button class="btn btn-secondary btn-sm" onclick="app.addDockerConnection('${c.id}', '${c.name}')">
-              ➕ Crear Conexión
-            </button>
+            <div id="stats-cpu-${c.id}" style="font-size: 0.85rem;">- %</div>
+            <div id="stats-mem-${c.id}" style="font-size: 0.8rem; color: var(--text-secondary);">- / -</div>
+          </td>
+          <td style="font-size: 0.85rem;">${c.image}</td>
+          <td><span class="badge badge-${c.state === 'running' ? 'success' : 'error'}">${c.state}</span></td>
+          <td style="font-size: 0.85rem;">${c.ports.map(p => p.PublicPort ? `${p.PublicPort}→${p.PrivatePort}` : p.PrivatePort).join(', ')}</td>
+          <td>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="app.addDockerConnection('${c.id}', '${c.name}')" title="Crear Conexión">
+                ➕
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="app.viewContainerLogs('${c.id}')" title="Ver Logs">
+                📜
+                </button>
+            </div>
           </td>
         </tr>
       `).join('');
+
+            // Fetch stats for each container
+            this.dockerContainers.forEach(c => {
+                if (c.state === 'running') {
+                    this.fetchContainerStats(c.id);
+                }
+            });
+
         } catch (error) {
             console.error('Error loading Docker containers:', error);
             const tbody = document.getElementById('docker-containers-list');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 2rem; color: var(--error);">Error: Docker no está disponible</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--error);">Error: Docker no está disponible</td></tr>';
+        }
+    }
+
+    async fetchContainerStats(id) {
+        try {
+            const stats = await this.api(`/docker/containers/${id}/stats`);
+            const cpuEl = document.getElementById(`stats-cpu-${id}`);
+            const memEl = document.getElementById(`stats-mem-${id}`);
+
+            if (cpuEl) cpuEl.textContent = `CPU: ${stats.cpu}%`;
+            if (memEl) memEl.textContent = `Mem: ${this.formatBytes(stats.memory.used)} / ${this.formatBytes(stats.memory.limit)}`;
+
+        } catch (error) {
+            console.warn(`Failed to fetch stats for ${id}`, error);
+        }
+    }
+
+    async viewContainerLogs(id) {
+        document.getElementById('logs-modal').style.display = 'flex';
+        const content = document.getElementById('logs-content');
+        content.textContent = 'Loading logs...';
+
+        try {
+            const data = await this.api(`/docker/containers/${id}/logs?tail=100`);
+            content.textContent = data.logs || 'No logs available.';
+            content.scrollTop = content.scrollHeight;
+        } catch (error) {
+            content.textContent = `Error loading logs: ${error.message}`;
         }
     }
 
@@ -674,8 +878,37 @@ class App {
         // Backup form
         document.getElementById('backup-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            await this.createBackup();
+            if (document.getElementById('schedule-toggle').checked) {
+                await this.saveBackupSchedule();
+            } else {
+                await this.createBackup();
+            }
         });
+
+        // Schedule toggle
+        const scheduleToggle = document.getElementById('schedule-toggle');
+        const scheduleOptions = document.getElementById('schedule-options');
+        const submitBtn = document.getElementById('backup-submit-btn');
+
+        if (scheduleToggle) {
+            scheduleToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    scheduleOptions.classList.remove('hidden');
+                    submitBtn.textContent = '📅 Guardar Programación';
+                    submitBtn.classList.remove('btn-primary');
+                    submitBtn.classList.add('btn-success');
+                    document.getElementById('task-name').required = true;
+                    document.getElementById('task-cron').required = true;
+                } else {
+                    scheduleOptions.classList.add('hidden');
+                    submitBtn.textContent = '💾 Ejecutar Backup';
+                    submitBtn.classList.add('btn-primary');
+                    submitBtn.classList.remove('btn-success');
+                    document.getElementById('task-name').required = false;
+                    document.getElementById('task-cron').required = false;
+                }
+            });
+        }
 
         // Restore button
         document.getElementById('restore-btn').addEventListener('click', async () => {
@@ -734,6 +967,40 @@ class App {
         }
     }
 
+    async saveBackupSchedule() {
+        const connectionId = document.getElementById('backup-connection').value;
+        const schema = document.getElementById('backup-schema').value;
+        const format = document.getElementById('backup-format').value;
+        const name = document.getElementById('task-name').value;
+        const cronSchedule = document.getElementById('task-cron').value;
+        const retentionCount = parseInt(document.getElementById('task-retention').value);
+        const webhookUrl = document.getElementById('task-webhook').value;
+
+        const data = {
+            name,
+            connection_id: parseInt(connectionId),
+            schema_name: schema,
+            excluded_tables: Array.from(this.excludedTables),
+            excluded_data_tables: Array.from(this.excludedDataTables), // Note: backend needs support for this in config table if not already
+            format,
+            cron_schedule: cronSchedule,
+            retention_count: retentionCount,
+            webhook_url: webhookUrl
+        };
+
+        try {
+            await this.api('/backup-configs', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            alert('✅ Tarea programada guardada exitosamente');
+            // Reset form or navigate to a "Scheduled Tasks" view (to be implemented)
+            document.getElementById('schedule-toggle').click(); // Toggle off
+        } catch (error) {
+            alert(`Error al guardar tarea: ${error.message}`);
+        }
+    }
+
     async restoreBackup() {
         const backupId = parseInt(document.getElementById('restore-backup').value);
         const targetConnectionId = parseInt(document.getElementById('restore-connection').value);
@@ -770,6 +1037,64 @@ class App {
         const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(1024));
         return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+    }
+    // Auth
+    async checkAuth() {
+        const token = localStorage.getItem('auth_token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+        try {
+            const res = await fetch('/api/auth/me', { headers });
+            if (res.status === 401 || res.status === 403) {
+                this.showLogin();
+                return false;
+            }
+
+            const data = await res.json();
+            this.appMode = data.mode;
+            this.currentUser = data.user;
+
+            document.getElementById('login-overlay').style.display = 'none';
+            return true;
+        } catch (error) {
+            console.error('Auth check failed', error);
+            return false;
+        }
+    }
+
+    showLogin() {
+        const overlay = document.getElementById('login-overlay');
+        overlay.style.display = 'flex';
+
+        const form = document.getElementById('login-form');
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('auth_token', data.token);
+                    document.getElementById('login-overlay').style.display = 'none';
+                    this.init();
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Network error';
+                errorDiv.style.display = 'block';
+            }
+        };
     }
 }
 

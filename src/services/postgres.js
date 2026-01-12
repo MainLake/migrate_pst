@@ -13,10 +13,11 @@ class PostgresService {
         try {
             await client.connect();
             const result = await client.query('SELECT version()');
-            await client.end();
             return { success: true, version: result.rows[0].version };
         } catch (error) {
             return { success: false, error: error.message };
+        } finally {
+            await client.end().catch(() => { });
         }
     }
 
@@ -37,10 +38,11 @@ class PostgresService {
         WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
         ORDER BY schema_name
       `);
-            await client.end();
             return result.rows.map(row => row.schema_name);
         } catch (error) {
             throw new Error(`Failed to get schemas: ${error.message}`);
+        } finally {
+            await client.end().catch(() => { });
         }
     }
 
@@ -63,10 +65,11 @@ class PostgresService {
         WHERE table_schema = $1 AND table_type = 'BASE TABLE'
         ORDER BY table_name
       `, [schema]);
-            await client.end();
             return result.rows;
         } catch (error) {
             throw new Error(`Failed to get tables: ${error.message}`);
+        } finally {
+            await client.end().catch(() => { });
         }
     }
 
@@ -99,14 +102,37 @@ class PostgresService {
         SELECT COUNT(*) as count FROM "${schema}"."${table}"
       `);
 
-            await client.end();
-
             return {
                 columns: columnsResult.rows,
                 row_count: parseInt(countResult.rows[0].count)
             };
         } catch (error) {
             throw new Error(`Failed to get table info: ${error.message}`);
+        } finally {
+            await client.end().catch(() => { });
+        }
+    }
+
+    async previewTableData(config, schema, table, limit = 50) {
+        const client = new Client({
+            host: config.host,
+            port: config.port || 5432,
+            database: config.database,
+            user: config.username,
+            password: config.password,
+        });
+
+        try {
+            await client.connect();
+            // Use identifiers to prevent SQL injection
+            const result = await client.query(`
+                SELECT * FROM "${schema}"."${table}" LIMIT $1
+            `, [limit]);
+            return result.rows;
+        } catch (error) {
+            throw new Error(`Failed to preview table data: ${error.message}`);
+        } finally {
+            await client.end().catch(() => { });
         }
     }
 
@@ -122,10 +148,11 @@ class PostgresService {
         try {
             await client.connect();
             const result = await client.query(query);
-            await client.end();
             return result.rows;
         } catch (error) {
             throw new Error(`Query failed: ${error.message}`);
+        } finally {
+            await client.end().catch(() => { });
         }
     }
 }

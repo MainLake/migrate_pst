@@ -83,9 +83,40 @@ class BackupService {
                 const message = data.toString();
                 errorOutput += message;
 
-                // Send progress updates
+                // Parse verbose output for better progress reporting
                 if (progressCallback) {
-                    progressCallback({ type: 'progress', message: message.trim() });
+                    const lines = message.split('\n');
+                    lines.forEach(line => {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) return;
+
+                        let friendlyMessage = trimmedLine;
+                        let type = 'progress';
+
+                        // Parse common pg_dump verbose messages
+                        if (trimmedLine.startsWith('pg_dump: dumping contents of table')) {
+                            const table = trimmedLine.split('table')[1].trim();
+                            friendlyMessage = `📦 Dumping data for table: ${table}`;
+                        } else if (trimmedLine.startsWith('pg_dump: saving encoding')) {
+                            friendlyMessage = '⚙️  Saving database encoding';
+                        } else if (trimmedLine.startsWith('pg_dump: saving standard_conforming_strings')) {
+                            friendlyMessage = '⚙️  Saving standard conforming strings';
+                        } else if (trimmedLine.startsWith('pg_dump: reading schemas')) {
+                            friendlyMessage = '📖 Reading database schemas';
+                        } else if (trimmedLine.startsWith('pg_dump: reading user-defined tables')) {
+                            friendlyMessage = '📖 Reading tables';
+                        } else if (trimmedLine.includes('CREATE TABLE')) {
+                            friendlyMessage = `📝 Saving table structure`;
+                        }
+
+                        // Filter out some noisy/internal messages if desired, or just pass them through
+                        // sending clearer messages for the important steps
+                        progressCallback({ 
+                            type: type, 
+                            message: friendlyMessage,
+                            original: trimmedLine 
+                        });
+                    });
                 }
             });
 
@@ -147,7 +178,7 @@ class BackupService {
     }
 
     async createBackupFromConfig(configId, progressCallback) {
-        const config = configDB.getBackupConfig(configId);
+        const config = await configDB.getBackupConfig(configId);
         if (!config) {
             throw new Error('Backup configuration not found');
         }
@@ -156,32 +187,40 @@ class BackupService {
             connectionId: config.connection_id,
             schema: config.schema_name,
             excludedTables: config.excluded_tables,
+            excludedDataTables: config.excluded_data_tables,
             rowFilters: config.row_filters,
             format: config.format,
             configId: configId
         }, progressCallback);
     }
 
-    getBackupFilePath(backupId) {
-        const backup = configDB.getBackup(backupId);
+    async getBackupFilePath(backupId) {
+        const backup = await configDB.getBackup(backupId);
         if (!backup) {
             throw new Error('Backup not found');
         }
         return backup.file_path;
     }
 
-    deleteBackup(backupId) {
-        const backup = configDB.getBackup(backupId);
+    async deleteBackup(backupId) {
+        const backup = await configDB.getBackup(backupId);
         if (!backup) {
             throw new Error('Backup not found');
         }
 
         // Delete file
         if (fs.existsSync(backup.file_path)) {
-            fs.unlinkSync(backup.file_path);
+            try {
+                fs.unlinkSync(backup.file_path);
+            } catch (err) {
+                console.error(`Failed to delete backup file: ${err.message}`);
+                // Continue to delete from DB even if file deletion fails (maybe file is already gone)
+            }
         }
 
-        // Note: The database record will be kept for history
+        // Delete from database
+        await configDB.deleteBackupHistory(backupId);
+        
         return { success: true };
     }
 }

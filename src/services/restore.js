@@ -56,16 +56,47 @@ class RestoreService {
             let errorOutput = '';
             let stdOutput = '';
 
-            restore.stdout.on('data', (data) => {
+            const parseProgress = (data) => {
                 const message = data.toString();
-                stdOutput += message;
-                progressCallback && progressCallback({ type: 'progress', message: message.trim() });
+                const lines = message.split('\n');
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) return;
+
+                    let friendlyMessage = trimmedLine;
+                    const type = 'progress';
+
+                    // Parse common pg_restore/psql verbose messages
+                    if (trimmedLine.startsWith('pg_restore: creating TABLE')) {
+                        const table = trimmedLine.split('TABLE')[1].trim();
+                        friendlyMessage = `🔨 Creating table: ${table}`;
+                    } else if (trimmedLine.startsWith('pg_restore: restoring data for table')) {
+                        const table = trimmedLine.split('table')[1].trim();
+                        friendlyMessage = `📦 Restoring data for table: ${table}`;
+                    } else if (trimmedLine.startsWith('pg_restore: creating INDEX')) {
+                        friendlyMessage = `🔎 Creating index`;
+                    } else if (trimmedLine.startsWith('pg_restore: creating CONSTRAINT')) {
+                        friendlyMessage = `🔒 Creating constraint`;
+                    } else if (trimmedLine.startsWith('pg_restore: processing data for table')) {
+                        const table = trimmedLine.split('table')[1].trim();
+                        friendlyMessage = `📦 Processing data: ${table}`;
+                    }
+
+                    progressCallback && progressCallback({
+                        type: type,
+                        message: friendlyMessage,
+                        original: trimmedLine
+                    });
+                });
+                return message;
+            };
+
+            restore.stdout.on('data', (data) => {
+                stdOutput += parseProgress(data);
             });
 
             restore.stderr.on('data', (data) => {
-                const message = data.toString();
-                errorOutput += message;
-                progressCallback && progressCallback({ type: 'progress', message: message.trim() });
+                errorOutput += parseProgress(data);
             });
 
             restore.on('close', async (code) => {
@@ -127,9 +158,41 @@ class RestoreService {
             throw new Error('Target connection is not a Docker container');
         }
 
-        const containerId = connection.docker_container_id;
+        let containerId = connection.docker_container_id;
+
+        // Self-healing: Check if container exists
+        const containerExists = await dockerService.verifyContainer(containerId);
+
+        if (!containerExists) {
+            console.log(`Container ${containerId} not found. Attempting to resolve by name...`);
+
+            // Try to find by name if we have one
+            const containerName = connection.docker_container_name || connection.name; // Fallback to connection name if specific container name is missing
+            const newContainerId = await dockerService.findContainerByName(containerName);
+
+            if (newContainerId) {
+                console.log(`Resolved container ${containerName} to ID ${newContainerId}. Updating connection...`);
+
+                // Update database with new ID
+                await configDB.updateConnection(targetConnectionId, {
+                    ...connection,
+                    docker_container_id: newContainerId,
+                    docker_container_name: containerName // Ensure name is saved for future
+                });
+
+                containerId = newContainerId;
+
+                progressCallback && progressCallback({
+                    type: 'progress',
+                    message: `⚠️  Container ID changed. Updated connection to use new container: ${containerName}`
+                });
+            } else {
+                throw new Error(`Docker container not found. ID: ${containerId}, Name: ${containerName}. Please check if the container is running.`);
+            }
+        }
+
         if (!containerId) {
-            throw new Error('Docker container ID not specified');
+            throw new Error('Docker container ID not specified and could not be resolved');
         }
 
         progressCallback && progressCallback({
@@ -172,12 +235,45 @@ class RestoreService {
 
         try {
             // Execute restore command in container
-            const result = await dockerService.execCommand(containerId, restoreCmd);
+            const result = await dockerService.execCommand(containerId, restoreCmd, (data) => {
+                const message = data.toString();
+                const lines = message.split('\n');
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) return;
 
-            progressCallback && progressCallback({
-                type: 'progress',
-                message: result.output
+                    let friendlyMessage = trimmedLine;
+                    const type = 'progress';
+
+                    // Parse common pg_restore/psql verbose messages (same as local)
+                    if (trimmedLine.startsWith('pg_restore: creating TABLE')) {
+                        const table = trimmedLine.split('TABLE')[1].trim();
+                        friendlyMessage = `🔨 Creating table: ${table}`;
+                    } else if (trimmedLine.startsWith('pg_restore: restoring data for table')) {
+                        const table = trimmedLine.split('table')[1].trim();
+                        friendlyMessage = `📦 Restoring data for table: ${table}`;
+                    } else if (trimmedLine.startsWith('pg_restore: creating INDEX')) {
+                        friendlyMessage = `🔎 Creating index`;
+                    } else if (trimmedLine.startsWith('pg_restore: creating CONSTRAINT')) {
+                        friendlyMessage = `🔒 Creating constraint`;
+                    } else if (trimmedLine.startsWith('pg_restore: processing data for table')) {
+                        const table = trimmedLine.split('table')[1].trim();
+                        friendlyMessage = `📦 Processing data: ${table}`;
+                    }
+
+                    progressCallback && progressCallback({
+                        type: type,
+                        message: friendlyMessage,
+                        original: trimmedLine
+                    });
+                });
             });
+
+            // We streamed the output, so no need to log the full output at the end
+            // progressCallback && progressCallback({
+            //    type: 'progress',
+            //    message: result.output
+            // });
 
             // Clean up backup file in container
             await dockerService.execCommand(containerId, ['rm', containerBackupPath]);
