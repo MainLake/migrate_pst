@@ -10,6 +10,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+# Copy scripts directory (needed for postinstall)
+COPY scripts ./scripts
+
 # Install dependencies
 RUN npm install --production
 
